@@ -2,19 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=1920, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Museum Art</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
-  body {
+body {
     background: #000;
-    width: 1920px;
-    height: 1080px;
+    width: 100vw;
+    height: 100vh;
     overflow: hidden;
     font-family: Georgia, serif;
     cursor: none;
-  }
+}
 
   #slideshow { position: fixed; inset: 0; background: #000; }
 
@@ -197,7 +197,7 @@ const MUSEUMS = [
       return (data.data || [])
         .filter(d => d.image_id)
         .map(d => ({
-          url: "https://www.artic.edu/iiif/2/" + d.image_id + "/full/full/0/default.jpg",   // original
+          url: "https://www.artic.edu/iiif/2/" + d.image_id + "/full/843,/0/default.jpg",
           title: d.title,
           artist: d.artist_display,
           date: d.date_display
@@ -215,9 +215,9 @@ const MUSEUMS = [
       if (!res.ok) throw new Error("Cleveland API " + res.status);
       const data = await res.json();
       return (data.data || [])
-        .filter(d => d.images && d.images.print && d.images.print.url)
+        .filter(d => d.images && d.images.web && d.images.web.url)
         .map(d => ({
-          url: d.images.print.url,
+          url: d.images.web.url,
           title: d.title,
           artist: d.creators && d.creators[0] ? d.creators[0].description : "",
           date: d.creation_date
