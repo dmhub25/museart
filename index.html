@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920, initial-scale=1">
+<title>Museum Art</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #000;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    font-family: Georgia, serif;
+    cursor: none;
+  }
+
+  #slideshow { position: fixed; inset: 0; background: #000; }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 1.8s ease-in-out;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+  .slide.active  { opacity: 1; }
+  .slide.exiting { opacity: 0; }
+
+  .slide img {
+    max-width: 100%;
+    max-height: 100%;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* ── Artwork info overlay ─────────────────────────────────────── */
+  #artwork-info {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 52px 80px 56px;
+    background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.5) 60%, transparent 100%);
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+    pointer-events: none;
+    z-index: 20;
+  }
+  #artwork-info.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  #artwork-title {
+    font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', serif;
+    font-size: 52px;
+    font-weight: 400;
+    color: #fff;
+    letter-spacing: 0.02em;
+    line-height: 1.15;
+    margin-bottom: 14px;
+    text-shadow: 0 2px 16px rgba(0,0,0,0.6);
+  }
+  #artwork-artist {
+    font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', serif;
+    font-size: 30px;
+    font-weight: 400;
+    font-style: italic;
+    color: rgba(255,255,255,0.75);
+    letter-spacing: 0.03em;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+  }
+  #artwork-museum {
+    margin-top: 10px;
+    font-family: 'Palatino Linotype', Palatino, serif;
+    font-size: 20px;
+    font-weight: 400;
+    color: rgba(255,255,255,0.45);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  }
+
+  /* ── Museum switch indicator ──────────────────────────────────── */
+  #museum-indicator {
+    position: fixed;
+    bottom: 48px;
+    right: 64px;
+    color: rgba(255,255,255,0);
+    font-size: 22px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-family: 'Palatino Linotype', Palatino, serif;
+    font-weight: 400;
+    pointer-events: none;
+    transition: color 0.6s ease;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.8);
+    z-index: 30;
+  }
+  #museum-indicator.visible { color: rgba(255,255,255,0.65); }
+
+  /* ── Loader ───────────────────────────────────────────────────── */
+  #loader {
+    position: fixed; inset: 0; background: #000;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; transition: opacity 1s ease;
+  }
+  #loader.hidden { opacity: 0; pointer-events: none; }
+
+  .spinner {
+    width: 60px; height: 60px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-top-color: rgba(255,255,255,0.5);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #error-msg {
+    position: fixed; inset: 0; background: #000;
+    display: none; align-items: center; justify-content: center;
+    color: rgba(255,255,255,0.4); font-size: 28px;
+    font-family: Georgia, serif; letter-spacing: 0.1em;
+  }
+</style>
+</head>
+<body>
+
+<div id="loader"><div class="spinner"></div></div>
+<div id="slideshow"></div>
+
+<div id="artwork-info">
+  <div id="artwork-title"></div>
+  <div id="artwork-artist"></div>
+  <div id="artwork-museum"></div>
+</div>
+
+<div id="museum-indicator"></div>
+<div id="error-msg">Loading collection…</div>
+
+<script>
+// ─── Museum Definitions ───────────────────────────────────────────────────────
+
+const MUSEUMS = [
+  {
+    short: "The Met · New York",
+    fetchBatch: async () => {
+      const terms = ['landscape','seascape','still life','harvest','river','village','garden','mythology','allegory','battle'];
+      const q = terms[Math.floor(Math.random() * terms.length)];
+      const res = await fetch(
+        "https://collectionapi.metmuseum.org/public/collection/v1/search?hasImages=true&medium=Paintings&q=" + encodeURIComponent(q)
+      );
+      const data = await res.json();
+      if (!data.objectIDs || !data.objectIDs.length) return [];
+      const picked = shuffle(data.objectIDs).slice(0, 40);
+      const objects = await Promise.allSettled(
+        picked.map(id =>
+          fetch("https://collectionapi.metmuseum.org/public/collection/v1/objects/" + id).then(r => r.json())
+        )
+      );
+      return objects
+        .filter(r => r.status === 'fulfilled' && r.value.primaryImage && r.value.objectName && /paint/i.test(r.value.objectName))
+        .map(r => ({ url: r.value.primaryImage, title: r.value.title, artist: r.value.artistDisplayName, date: r.value.objectDate }));
+    }
+  },
+
+  {
+    short: "Art Institute · Chicago",
+    fetchBatch: async () => {
+      const page = Math.floor(Math.random() * 40) + 1;
+      const res = await fetch(
+        "https://api.artic.edu/api/v1/artworks/search?fields=id,title,artist_display,image_id,date_display&limit=50&page=" + page,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: {
+              bool: {
+                must: [
+                  { term: { "artwork_type_title.keyword": "Painting" } },
+                  { term: { is_public_domain: true } },
+                  { exists: { field: "image_id" } }
+                ]
+              }
+            }
+          })
+        }
+      );
+      const data = await res.json();
+      return (data.data || [])
+        .filter(d => d.image_id)
+        .map(d => ({
+          url: "https://www.artic.edu/iiif/2/" + d.image_id + "/full/843,/0/default.jpg",
+          title: d.title,
+          artist: d.artist_display,
+          date: d.date_display
+        }));
+    }
+  },
+
+  {
+    short: "Cleveland Museum of Art",
+    fetchBatch: async () => {
+      const skip = Math.floor(Math.random() * 800);
+      const res = await fetch(
+        "https://openaccess-api.clevelandart.org/api/artworks/?has_image=1&limit=60&skip=" + skip + "&type=Painting"
+      );
+      if (!res.ok) throw new Error("Cleveland API " + res.status);
+      const data = await res.json();
+      return (data.data || [])
+        .filter(d => d.images && d.images.web && d.images.web.url)
+        .map(d => ({
+          url: d.images.web.url,
+          title: d.title,
+          artist: d.creators && d.creators[0] ? d.creators[0].description : "",
+          date: d.creation_date
+        }));
+    }
+  }
+];
+
+// ─── State ────────────────────────────────────────────────────────────────────
+
+let currentMuseum = 0;
+let currentArtwork = null;   // track what's on screen for the info overlay
+let queue = [];
+let activeSlideEl = null;
+let slideshowTimer = null;
+let indicatorTimer = null;
+let infoTimer = null;
+let isTransitioning = false;
+let switchGen = 0;
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function checkLandscape(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => (img.naturalWidth > img.naturalHeight ? resolve(url) : reject("portrait"));
+    img.onerror = () => reject("error");
+    img.src = url;
+    setTimeout(() => reject("timeout"), 14000);
+  });
+}
+
+// ─── Fetch & Validate ─────────────────────────────────────────────────────────
+
+async function loadMuseumQueue(museumIdx) {
+  try {
+    const artworks = await MUSEUMS[museumIdx].fetchBatch();
+    const candidates = artworks.filter(a => a.url && a.url.startsWith("http"));
+    const valid = [];
+    for (const art of shuffle(candidates).slice(0, 60)) {
+      try {
+        await checkLandscape(art.url);
+        valid.push(art);
+        if (valid.length >= 12) break;
+      } catch(e) { /* skip portrait or broken */ }
+    }
+    return shuffle(valid);
+  } catch(e) {
+    console.warn("Load error museum", museumIdx, e);
+    return [];
+  }
+}
+
+// ─── Artwork Info Overlay ─────────────────────────────────────────────────────
+
+function showArtworkInfo() {
+  if (!currentArtwork) return;
+  const panel = document.getElementById("artwork-info");
+  const titleEl = document.getElementById("artwork-title");
+  const artistEl = document.getElementById("artwork-artist");
+  const museumEl = document.getElementById("artwork-museum");
+
+  titleEl.textContent = currentArtwork.title || "Untitled";
+
+  const parts = [];
+  if (currentArtwork.artist) parts.push(currentArtwork.artist);
+  if (currentArtwork.date)   parts.push(currentArtwork.date);
+  artistEl.textContent = parts.join("  ·  ");
+
+  museumEl.textContent = MUSEUMS[currentMuseum].short;
+
+  panel.classList.add("visible");
+  clearTimeout(infoTimer);
+  infoTimer = setTimeout(() => panel.classList.remove("visible"), 5000);
+}
+
+function hideArtworkInfo() {
+  clearTimeout(infoTimer);
+  document.getElementById("artwork-info").classList.remove("visible");
+}
+
+// ─── Slideshow ────────────────────────────────────────────────────────────────
+
+const slideshowEl = document.getElementById("slideshow");
+
+function createSlideEl(artwork) {
+  const div = document.createElement("div");
+  div.className = "slide";
+  const img = document.createElement("img");
+  img.src = artwork.url;
+  img.alt = artwork.title || "";
+  div.appendChild(img);
+  return div;
+}
+
+async function showNextSlide() {
+  if (isTransitioning) return;
+
+  if (queue.length < 3) {
+    const more = await loadMuseumQueue(currentMuseum);
+    queue = [...queue, ...more];
+    if (queue.length === 0) { scheduleNext(8000); return; }
+  }
+
+  const artwork = queue.shift();
+  if (!artwork) { scheduleNext(5000); return; }
+
+  currentArtwork = artwork;
+  isTransitioning = true;
+  const newSlide = createSlideEl(artwork);
+  slideshowEl.appendChild(newSlide);
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      newSlide.classList.add("active");
+      if (activeSlideEl) {
+        activeSlideEl.classList.add("exiting");
+        const old = activeSlideEl;
+        setTimeout(() => old.remove(), 2200);
+      }
+      activeSlideEl = newSlide;
+      isTransitioning = false;
+    });
+  });
+
+  scheduleNext(10000);
+}
+
+function scheduleNext(delay) {
+  clearTimeout(slideshowTimer);
+  slideshowTimer = setTimeout(showNextSlide, delay);
+}
+
+// ─── Museum Switch ────────────────────────────────────────────────────────────
+
+async function switchMuseum(idx) {
+  currentMuseum = idx;
+  queue = [];
+  clearTimeout(slideshowTimer);
+  hideArtworkInfo();
+  showMuseumIndicator();
+
+  const gen = ++switchGen;
+  const newQueue = await loadMuseumQueue(idx);
+  if (gen !== switchGen) return;
+
+  queue = newQueue;
+  if (queue.length > 0) showNextSlide();
+  else scheduleNext(5000);
+}
+
+function showMuseumIndicator() {
+  const el = document.getElementById("museum-indicator");
+  el.textContent = MUSEUMS[currentMuseum].short;
+  el.classList.add("visible");
+  clearTimeout(indicatorTimer);
+  indicatorTimer = setTimeout(() => el.classList.remove("visible"), 3500);
+}
+
+// ─── Remote Control ───────────────────────────────────────────────────────────
+
+document.addEventListener("keydown", e => {
+  switch (e.keyCode) {
+    case 38: // Up — next museum
+      e.preventDefault();
+      switchMuseum((currentMuseum + 1) % MUSEUMS.length);
+      break;
+    case 40: // Down — previous museum
+      e.preventDefault();
+      switchMuseum((currentMuseum - 1 + MUSEUMS.length) % MUSEUMS.length);
+      break;
+    case 39: // Right — skip image
+    case 37: // Left  — skip image
+      e.preventDefault();
+      hideArtworkInfo();
+      clearTimeout(slideshowTimer);
+      showNextSlide();
+      break;
+    case 13:  // Select/Enter — pause & show info, or resume
+    case 179: // Play-Pause media key
+      e.preventDefault();
+      if (slideshowTimer) {
+        // Pause: stop slideshow and show artwork info for 5 s
+        clearTimeout(slideshowTimer);
+        slideshowTimer = null;
+        showArtworkInfo();
+      } else {
+        // Resume: hide info and continue
+        hideArtworkInfo();
+        showNextSlide();
+      }
+      break;
+  }
+});
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+
+async function boot() {
+  const loader = document.getElementById("loader");
+  try {
+    queue = await loadMuseumQueue(0);
+    loader.classList.add("hidden");
+    if (queue.length > 0) showNextSlide();
+    else document.getElementById("error-msg").style.display = "flex";
+  } catch(e) {
+    loader.classList.add("hidden");
+    document.getElementById("error-msg").style.display = "flex";
+  }
+}
+
+boot();
+</script>
+</body>
+</html>
