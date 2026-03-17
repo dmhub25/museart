@@ -197,7 +197,7 @@ const MUSEUMS = [
       return (data.data || [])
         .filter(d => d.image_id)
         .map(d => ({
-          url: "https://www.artic.edu/iiif/2/" + d.image_id + "/full/843,/0/default.jpg",
+          url: "https://www.artic.edu/iiif/2/" + d.image_id + "/full/full/0/default.jpg",   // original
           title: d.title,
           artist: d.artist_display,
           date: d.date_display
@@ -215,9 +215,9 @@ const MUSEUMS = [
       if (!res.ok) throw new Error("Cleveland API " + res.status);
       const data = await res.json();
       return (data.data || [])
-        .filter(d => d.images && d.images.web && d.images.web.url)
+        .filter(d => d.images && d.images.print && d.images.print.url)
         .map(d => ({
-          url: d.images.web.url,
+          url: d.images.print.url,
           title: d.title,
           artist: d.creators && d.creators[0] ? d.creators[0].description : "",
           date: d.creation_date
@@ -352,7 +352,7 @@ async function showNextSlide() {
     });
   });
 
-  scheduleNext(10000);
+  scheduleNext(300000);
 }
 
 function scheduleNext(delay) {
